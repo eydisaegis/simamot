@@ -522,6 +522,7 @@
       <div class="tile" onclick="openOverlay('ov-vallakort')"><span class="ic">🗺️</span><div class="tn">Vallakort</div></div>
       <div class="tile" onclick="openOverlay('ov-hlekkir')"><span class="ic">📞</span><div class="tn">Símanúmer & hlekkir</div></div>
       <div class="tile" onclick="openOverlay('ov-mot')"><span class="ic">ℹ️</span><div class="tn">Um mótið</div></div>
+      <div class="tile" onclick="openOverlay('ov-sync')"><span class="ic" id="sync-tile-ic">🔄</span><div class="tn">Samstilling</div></div>
     </div>
   </section>
 
@@ -629,6 +630,30 @@
     <p class="about-p">Á laugardag kl. 17–18:30 er <b>pylsuveisla og skemmtun</b> fyrir utan Smárann/Fífuna — háttvísiverðlaun og fleira. Munið líka <b>spurningaleikinn</b> (QR-kóðar á svæðinu) — svörum þarf að skila fyrir kl. 14 á laugardag.</p>
     <p class="about-p">Sjúkravakt Breiðabliks er í stúkunni á Eikarvelli. Í neyðartilvikum: hringið alltaf í <b>112</b>.</p>
     <p class="about-p">💡 <b>Ábending:</b> Opnaðu þessa síðu í Safari og veldu „Deila“ → „Add to Home Screen“ til að fá hana sem app-tákn á heimaskjáinn.</p>
+  </div>
+</div>
+
+<div class="overlay" id="ov-sync">
+  <div class="overlay-bar"><span class="ot">🔄 Samstilling</span><button class="overlay-close" onclick="closeOverlay('ov-sync')">✕</button></div>
+  <div class="overlay-scroll">
+    <p class="about-p">Þegar lykill er tengdur samstillast leikir, úrslit og pakklisti sjálfkrafa milli allra sem hafa lykil að <b>eydisaegis/simamot</b> á GitHub — appið sækir nýjustu stöðu á ~20 sek fresti og sendir breytingar jafnóðum.</p>
+
+    <div id="sync-token-box">
+      <div class="frm-lbl">GitHub-lykill (Personal Access Token)</div>
+      <input class="frm-in" id="sync-token-in" type="password" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="frm-save" id="sync-token-save">Vista lykil og samstilla</button>
+      <div class="note-sm">Lykillinn geymist bara í þessum vafra á þessu tæki — fer aldrei neitt annað en beint til GitHub.</div>
+    </div>
+
+    <div id="sync-active-box" style="display:none">
+      <div class="rule-facts" style="margin-top:4px">
+        <div class="rule-fact" style="flex:2"><div class="v" id="sync-status-v">—</div><div class="k">staða</div></div>
+      </div>
+      <button class="frm-save" id="sync-now-btn">Samstilla núna</button>
+      <button class="frm-clear" id="sync-forget-btn">Aftengja / gleyma lykli</button>
+    </div>
+
+    <div class="note-sm" id="sync-err" style="display:none;color:var(--live)"></div>
   </div>
 </div>
 
@@ -1200,6 +1225,7 @@ document.getElementById('am-save').onclick = function(){
   setMatches(list);
   closeOverlay('ov-addmatch');
   renderAll();
+  syncPush();
 };
 document.getElementById('am-del').onclick = function(){
   if(!editingId) return;
@@ -1208,6 +1234,7 @@ document.getElementById('am-del').onclick = function(){
   const s = getScores(); delete s[editingId]; setScores(s);
   closeOverlay('ov-addmatch');
   renderAll();
+  syncPush();
 };
 
 /* ====================== SKRÁ ÚRSLIT ====================== */
@@ -1243,12 +1270,14 @@ document.getElementById('sc-save').onclick = function(){
   const s = getScores(); s[scoringId] = {h,a}; setScores(s);
   closeOverlay('ov-score');
   renderAll();
+  syncPush();
 };
 document.getElementById('sc-clear').onclick = function(){
   if(!scoringId) return;
   const s = getScores(); delete s[scoringId]; setScores(s);
   closeOverlay('ov-score');
   renderAll();
+  syncPush();
 };
 
 // Smellir á leikjaspjöld (skrá úrslit / breyta)
@@ -1307,9 +1336,10 @@ function renderPack(){
       s[cb.dataset.key] = cb.checked;
       lsSet('iase-pakklisti', s);
       cb.closest('.pack-item').classList.toggle('checked', cb.checked);
+      syncPush();
     });
   });
-  document.getElementById('pack-reset-btn').onclick = ()=>{ lsSet('iase-pakklisti', {}); renderPack(); };
+  document.getElementById('pack-reset-btn').onclick = ()=>{ lsSet('iase-pakklisti', {}); renderPack(); syncPush(); };
 }
 
 /* ====================== LIÐSLISTI ====================== */
@@ -1398,6 +1428,146 @@ try{
     'data:application/manifest+json,'+encodeURIComponent(JSON.stringify(manifest));
 }catch(e){}
 
+/* ====================== SAMSTILLING (GitHub) ====================== */
+// Leikir, úrslit og pakklisti samstillast með því að lesa/skrifa data.json
+// í GitHub-geymslunni eydisaegis/simamot (private repo). Hver notandi
+// límir inn sinn eigin Personal Access Token — hann geymist bara í
+// localStorage á því tæki og er aldrei sendur annað en beint til GitHub.
+
+const GH = { owner:'eydisaegis', repo:'simamot', path:'data.json', branch:'main' };
+let syncBusy = false;
+let syncTimer = null;
+
+function ghToken(){ return localStorage.getItem('iase-gh-token') || ''; }
+function ghHeaders(){ return { 'Authorization':'Bearer '+ghToken(), 'Accept':'application/vnd.github+json' }; }
+
+function utf8ToB64(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin=''; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){ bin += String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
+  return btoa(bin);
+}
+function b64ToUtf8(b64){
+  const bin = atob(b64.replace(/\s/g,''));
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function setSyncStatus(txt, isErr){
+  const v = document.getElementById('sync-status-v');
+  if(v) v.textContent = txt;
+  const err = document.getElementById('sync-err');
+  if(err){ err.style.display = isErr ? '' : 'none'; if(isErr) err.textContent = txt; }
+}
+
+async function ghGetFile(){
+  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}?ref=${GH.branch}&t=${Date.now()}`;
+  const r = await fetch(url, { headers: ghHeaders(), cache:'no-store' });
+  if(r.status===404) return { sha:null, data:null };
+  if(!r.ok) throw new Error('Lestur '+r.status);
+  const j = await r.json();
+  let data = null;
+  try{ data = JSON.parse(b64ToUtf8(j.content)); }catch(e){ data = null; }
+  return { sha:j.sha, data };
+}
+
+async function ghPutFile(dataObj, sha){
+  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
+  const body = {
+    message: 'Samstilling — '+new Date().toISOString(),
+    content: utf8ToB64(JSON.stringify(dataObj, null, 2)),
+    branch: GH.branch,
+  };
+  if(sha) body.sha = sha;
+  const r = await fetch(url, { method:'PUT', headers:{...ghHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  if(!r.ok){
+    if(r.status===409) throw new Error('árekstur, reyni aftur');
+    throw new Error('Skrifa '+r.status);
+  }
+}
+
+// Sækir nýjustu deildu gögnin og yfirskrifar staðbundið EF þau eru nýrri
+async function syncPull(){
+  if(!ghToken() || syncBusy) return;
+  syncBusy = true;
+  setSyncStatus('Samstilli…');
+  try{
+    const { data } = await ghGetFile();
+    if(data){
+      const remoteTs = data.updatedAt || 0;
+      const localTs = lsGet('iase-remote-ts', 0);
+      if(remoteTs > localTs){
+        if(Array.isArray(data.matches)) setMatches(data.matches);
+        if(data.scores) setScores(data.scores);
+        if(data.packing) lsSet('iase-pakklisti', data.packing);
+        lsSet('iase-remote-ts', remoteTs);
+        renderAll(); renderPack();
+      }
+    }
+    setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
+  }catch(e){
+    setSyncStatus('Villa við samstillingu: '+e.message, true);
+  }finally{
+    syncBusy = false;
+  }
+}
+
+// Sendir staðbundnar breytingar upp — sækir sha fyrst til að forðast árekstur
+async function syncPush(){
+  if(!ghToken()) return;
+  if(syncBusy){ setTimeout(syncPush, 800); return; }
+  syncBusy = true;
+  setSyncStatus('Sendi breytingar…');
+  try{
+    const { sha } = await ghGetFile();
+    const dataObj = {
+      matches: getMatches(),
+      scores: getScores(),
+      packing: lsGet('iase-pakklisti', {}),
+      updatedAt: Date.now(),
+    };
+    await ghPutFile(dataObj, sha);
+    lsSet('iase-remote-ts', dataObj.updatedAt);
+    setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
+  }catch(e){
+    setSyncStatus('Villa við sendingu: '+e.message, true);
+  }finally{
+    syncBusy = false;
+  }
+}
+
+function refreshSyncUI(){
+  const has = !!ghToken();
+  document.getElementById('sync-token-box').style.display = has ? 'none' : '';
+  document.getElementById('sync-active-box').style.display = has ? '' : 'none';
+  document.getElementById('sync-tile-ic').textContent = has ? '🔄' : '🔌';
+}
+
+document.getElementById('sync-token-save').onclick = async function(){
+  const v = document.getElementById('sync-token-in').value.trim();
+  if(!v) return;
+  localStorage.setItem('iase-gh-token', v);
+  document.getElementById('sync-token-in').value = '';
+  refreshSyncUI();
+  await syncPull();
+  await syncPush();
+  startSyncTimer();
+};
+document.getElementById('sync-now-btn').onclick = async function(){ await syncPull(); await syncPush(); };
+document.getElementById('sync-forget-btn').onclick = function(){
+  if(!confirm('Aftengja þetta tæki frá samstillingu?')) return;
+  localStorage.removeItem('iase-gh-token');
+  if(syncTimer) clearInterval(syncTimer);
+  refreshSyncUI();
+};
+
+function startSyncTimer(){
+  if(syncTimer) clearInterval(syncTimer);
+  if(!ghToken()) return;
+  syncTimer = setInterval(syncPull, 20000); // sækja nýtt á 20 sek fresti
+}
+
 /* ====================== RÆSING & TAKTUR ====================== */
 
 function renderAll(){
@@ -1414,6 +1584,8 @@ renderAll();
 renderPack();
 renderRoster();
 loadWeather();
+refreshSyncUI();
+if(ghToken()){ syncPull(); startSyncTimer(); }
 
 setInterval(tick, 1000);            // niðurtalning á sekúndufresti
 setInterval(()=>{ updateNow(); updateUpNext(); }, 60000);  // núna-kort á mínútufresti
