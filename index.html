@@ -1254,7 +1254,7 @@ document.getElementById('am-save').onclick = function(){
   setMatches(list);
   closeOverlay('ov-addmatch');
   renderAll();
-  syncPush();
+  syncFields(['matches']);
 };
 document.getElementById('am-del').onclick = function(){
   if(!requireToken()) return;
@@ -1264,7 +1264,7 @@ document.getElementById('am-del').onclick = function(){
   const s = getScores(); delete s[editingId]; setScores(s);
   closeOverlay('ov-addmatch');
   renderAll();
-  syncPush();
+  syncFields(['matches','scores']);
 };
 
 /* ====================== SKRÁ ÚRSLIT ====================== */
@@ -1302,7 +1302,7 @@ document.getElementById('sc-save').onclick = function(){
   const s = getScores(); s[scoringId] = {h,a}; setScores(s);
   closeOverlay('ov-score');
   renderAll();
-  syncPush();
+  syncFields(['scores']);
 };
 document.getElementById('sc-clear').onclick = function(){
   if(!requireToken()) return;
@@ -1310,7 +1310,7 @@ document.getElementById('sc-clear').onclick = function(){
   const s = getScores(); delete s[scoringId]; setScores(s);
   closeOverlay('ov-score');
   renderAll();
-  syncPush();
+  syncFields(['scores']);
 };
 
 // Smellir á leikjaspjöld (skrá úrslit / breyta)
@@ -1374,12 +1374,12 @@ function renderPack(){
       s[cb.dataset.key] = cb.checked;
       lsSet('iase-pakklisti', s);
       cb.closest('.pack-item').classList.toggle('checked', cb.checked);
-      syncPush();
+      syncFields(['packing']);
     });
   });
   document.getElementById('pack-reset-btn').onclick = ()=>{
     if(!requireToken()) return;
-    lsSet('iase-pakklisti', {}); renderPack(); syncPush();
+    lsSet('iase-pakklisti', {}); renderPack(); syncFields(['packing']);
   };
 }
 
@@ -1505,27 +1505,44 @@ async function fbRead(){
   return await r.json();
 }
 
-async function fbWrite(dataObj){
+// PATCH breytir bara þeim reitum sem sendir eru — snertir ekki systkinareiti.
+// Þetta kemur í veg fyrir að t.d. pakklisti-sending yfirskrifi leikjalista
+// með gamalli staðbundinni útgáfu fyrir slysni.
+async function fbPatch(partial){
   const url = `${FB.databaseURL}/${FB.node}.json`;
-  const payload = { ...dataObj, _secret: ghToken() };
-  const r = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  const payload = { ...partial, _secret: ghToken() };
+  const r = await fetch(url, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
   if(!r.ok){
     if(r.status===401||r.status===403) throw new Error(r.status+' — rangt lykilorð');
     throw new Error('Skrifa '+r.status);
   }
 }
 
+const SYNC_FIELDS = ['matches','scores','packing'];
+function fieldValue(name){
+  if(name==='matches') return getMatches();
+  if(name==='scores') return getScores();
+  return lsGet('iase-pakklisti', {});
+}
+
+// Ber saman hvert svið (leikir/úrslit/pakklisti) SÉR — hvert með sinn eigin
+// tímastimpil — svo ólíkar breytingar geti aldrei yfirskrifað hvor aðra.
 function applyRemoteData(data){
   if(!data) return;
-  const remoteTs = data.updatedAt || 0;
-  const localTs = lsGet('iase-remote-ts', 0);
-  if(remoteTs > localTs){
-    if(Array.isArray(data.matches)) setMatches(data.matches);
-    if(data.scores) setScores(data.scores);
-    if(data.packing) lsSet('iase-pakklisti', data.packing);
-    lsSet('iase-remote-ts', remoteTs);
-    renderAll(); renderPack();
-  }
+  let changed = false;
+  SYNC_FIELDS.forEach(name=>{
+    if(data[name]===undefined) return;
+    const remoteTs = data[name+'UpdatedAt'] || 0;
+    const localTs = lsGet('iase-remote-ts-'+name, 0);
+    if(remoteTs > localTs){
+      if(name==='matches' && Array.isArray(data.matches)) setMatches(data.matches);
+      else if(name==='scores' && data.scores) setScores(data.scores);
+      else if(name==='packing' && data.packing) lsSet('iase-pakklisti', data.packing);
+      lsSet('iase-remote-ts-'+name, remoteTs);
+      changed = true;
+    }
+  });
+  if(changed){ renderAll(); renderPack(); }
   setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
 }
 
@@ -1544,21 +1561,21 @@ async function syncPull(){
   }
 }
 
-// Sendir staðbundnar breytingar upp — krefst lykilorðs.
-async function syncPush(){
+// Sendir AÐEINS þau svið sem breyttust — krefst lykilorðs.
+async function syncFields(names){
   if(!ghToken()) return;
-  if(syncBusy){ setTimeout(syncPush, 800); return; }
+  if(syncBusy){ setTimeout(()=>syncFields(names), 800); return; }
   syncBusy = true;
   setSyncStatus('Sendi breytingar…');
   try{
-    const dataObj = {
-      matches: getMatches(),
-      scores: getScores(),
-      packing: lsGet('iase-pakklisti', {}),
-      updatedAt: Date.now(),
-    };
-    await fbWrite(dataObj);
-    lsSet('iase-remote-ts', dataObj.updatedAt);
+    const ts = Date.now();
+    const patch = {};
+    names.forEach(name=>{
+      patch[name] = fieldValue(name);
+      patch[name+'UpdatedAt'] = ts;
+    });
+    await fbPatch(patch);
+    names.forEach(name=> lsSet('iase-remote-ts-'+name, ts));
     setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
   }catch(e){
     setSyncStatus('Villa við sendingu: '+e.message, true);
@@ -1566,6 +1583,9 @@ async function syncPush(){
     syncBusy = false;
   }
 }
+
+// Sendir allt í einu — bara notað þegar lykilorð er tengt í fyrsta sinn.
+async function syncPush(){ await syncFields(SYNC_FIELDS); }
 
 // Rauntímastreymi — heldur opinni tengingu við Firebase og fær breytingar
 // ýttar til sín um leið og einhver vistar, engin bið eftir næstu fyrirspurn.
