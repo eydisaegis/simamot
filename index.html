@@ -547,6 +547,7 @@
   <section id="tab-meira" class="tab-content">
     <div class="grid2">
       <div class="tile" onclick="openLiveWidgets()"><span class="ic">📊</span><div class="tn">Riðillinn – live</div></div>
+      <div class="tile" onclick="downloadICS()"><span class="ic">📅</span><div class="tn">Leikir í dagatal</div></div>
       <div class="tile" onclick="openOverlay('ov-pakklisti')"><span class="ic">🎒</span><div class="tn">Pakklisti</div></div>
       <div class="tile" onclick="openOverlay('ov-reglur')"><span class="ic">🛡️</span><div class="tn">Reglur í hnotskurn</div></div>
       <div class="tile" onclick="openOverlay('ov-lidslisti')"><span class="ic">👥</span><div class="tn">Liðslisti</div><span class="lock">🔒</span></div>
@@ -1685,8 +1686,55 @@ document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState === 'visible') syncPull();
 });
 
-/* ====================== RIÐILLINN LIVE (mótakerfis-tól) ====================== */
-// Opinberu innfellingartólin frá torneopal, hlaðin í einangraða ramma (iframe)
+/* ====================== LEIKIR Í DAGATAL (.ics) ====================== */
+// Býr til dagatalsskrá úr öllum skráðum leikjum með áminningu 15 mín fyrir
+// hvern leik (= mætingartíminn). iOS opnar hana beint í Dagatalinu — alvöru
+// tilkynningar með símann læstan, ekkert net eða viðbótarforrit.
+// Ísland er á UTC allt árið, svo staðartími = Z-tími beint.
+function icsEscape(s){ return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,'); }
+function buildICS(){
+  const lines = [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//IA Sigrun Eva//Simamotid 2026//IS','CALSCALE:GREGORIAN'
+  ];
+  const ms = allMatches().slice().sort((a,b)=>toDate(a)-toDate(b));
+  ms.forEach(m=>{
+    const tm = matchTeams(m);
+    const start = toDate(m);
+    const end = new Date(start.getTime() + MATCH_LEN_MIN*60000);
+    const fmt = d => d.toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+    lines.push(
+      'BEGIN:VEVENT',
+      'UID:'+m.id+'@ia-sigruneva-simamot2026',
+      'DTSTAMP:'+fmt(new Date()),
+      'DTSTART:'+fmt(start),
+      'DTEND:'+fmt(end),
+      'SUMMARY:'+icsEscape('⚽ '+tm.home+' – '+tm.away),
+      'LOCATION:'+icsEscape((m.field||'')+', Smárinn, Kópavogi'),
+      'DESCRIPTION:'+icsEscape('Símamótið 2026. Mæting kl. '+meetTimeOf(m)+'.'),
+      'BEGIN:VALARM',
+      'TRIGGER:-PT15M',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:'+icsEscape('Mæting núna — '+tm.home+' – '+tm.away+' ('+(m.field||'')+')'),
+      'END:VALARM',
+      'END:VEVENT'
+    );
+  });
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+function downloadICS(){
+  const ms = allMatches();
+  if(!ms.length){ alert('Engir leikir skráðir enn — bættu leikjum við fyrst.'); return; }
+  const blob = new Blob([buildICS()], {type:'text/calendar;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ia-sigrun-eva-leikir.ics';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+
+/* ====================== RIÐILLINN LIVE (mótakerfis-tól) ====================== */// Opinberu innfellingartólin frá torneopal, hlaðin í einangraða ramma (iframe)
 // í hvert sinn sem glugginn opnast — alltaf ferskustu gögn, ekkert skyndiminni.
 function openLiveWidgets(){
   const base = "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><body style='margin:8px;font-family:sans-serif'>";
