@@ -7,6 +7,14 @@
       "opp": "M",
       "field": "M",
       "side": "home"
+    },
+    {
+      "id": "m1783475898501",
+      "day": "sun",
+      "t": "08:00",
+      "opp": "Kkkkk",
+      "field": "Kl",
+      "side": "home"
     }
   ],
   "scores": {},
@@ -18,5 +26,5 @@
     "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": true,
     "Annað::Sundföt í sundpoka": false
   },
-  "updatedAt": 1783475860302
+  "updatedAt": 1783475899623
 }
