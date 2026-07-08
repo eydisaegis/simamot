@@ -405,6 +405,11 @@
 
   @media (prefers-reduced-motion:reduce){ .pulse{animation:none} }
 
+  /* ---- Riðillinn live (mótakerfis-tól) ---- */
+  .ov-h3{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--gult);margin:14px 0 8px}
+  .live-frame-wrap{background:#fff;border-radius:12px;overflow:hidden;border:1px solid var(--lina)}
+  .live-frame{display:block;width:100%;height:420px;border:0;background:#fff}
+
   /* ---- Draga niður til að uppfæra ---- */
   .pull-ind{
     position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;z-index:60;
@@ -541,6 +546,7 @@
   <!-- ============ MEIRA ============ -->
   <section id="tab-meira" class="tab-content">
     <div class="grid2">
+      <div class="tile" onclick="openLiveWidgets()"><span class="ic">📊</span><div class="tn">Riðillinn – live</div></div>
       <div class="tile" onclick="openOverlay('ov-pakklisti')"><span class="ic">🎒</span><div class="tn">Pakklisti</div></div>
       <div class="tile" onclick="openOverlay('ov-reglur')"><span class="ic">🛡️</span><div class="tn">Reglur í hnotskurn</div></div>
       <div class="tile" onclick="openOverlay('ov-lidslisti')"><span class="ic">👥</span><div class="tn">Liðslisti</div><span class="lock">🔒</span></div>
@@ -600,6 +606,17 @@
   </div>
 </div>
 
+<div class="overlay" id="ov-live">
+  <div class="overlay-bar"><span class="ot">📊 Riðillinn – live</span><button class="overlay-close" onclick="closeOverlay('ov-live')">✕</button></div>
+  <div class="overlay-scroll">
+    <p class="about-p">Beint úr mótakerfinu — sækist ferskt í hvert sinn sem glugginn er opnaður. Hér sjást opinber úrslit og staðan í riðlinum, líka leikir hinna liðanna.</p>
+    <h3 class="ov-h3">Leikir ÍA Sigrún Eva</h3>
+    <div class="live-frame-wrap"><iframe id="live-schedule" class="live-frame" title="Leikjaplan liðsins"></iframe></div>
+    <h3 class="ov-h3">Staðan í riðlinum</h3>
+    <div class="live-frame-wrap"><iframe id="live-table" class="live-frame" title="Riðlastaðan"></iframe></div>
+  </div>
+</div>
+
 <div class="overlay" id="ov-vallakort">
   <div class="overlay-bar"><span class="ot">🗺️ Vallakort</span><button class="overlay-close" onclick="closeOverlay('ov-vallakort')">✕</button></div>
   <div class="overlay-scroll">
@@ -637,6 +654,7 @@
     <a class="link-row" href="tel:8393549"><span class="ic">🏫</span><div class="lt"><b>Snælandsskóli — vakt</b><small>839-3549 · næturvarsla í skólanum</small></div><span class="chev">📞</span></a>
 
     <div class="sec-h">Á netinu</div>
+    <a class="link-row" href="https://simamotid.torneopal.com/taso/joukkue.php?joukkue=173867" target="_blank" rel="noopener"><span class="ic">⚽</span><div class="lt"><b>ÍA Sigrún Eva í mótakerfinu</b><small>Opinber leikjaplan liðsins og riðlastaðan</small></div><span class="chev">›</span></a>
     <a class="link-row" href="https://simamotid.is" target="_blank" rel="noopener"><span class="ic">🌐</span><div class="lt"><b>Heimasíða mótsins</b><small>simamotid.is — mótskerfi, riðlar og leikjaplan</small></div><span class="chev">›</span></a>
     <a class="link-row" href="https://www.facebook.com/simamotid/" target="_blank" rel="noopener"><span class="ic">📘</span><div class="lt"><b>Facebook-síða mótsins</b><small>facebook.com/simamotid · #simamotid</small></div><span class="chev">›</span></a>
     <a class="link-row" href="https://www.sporthero.is" target="_blank" rel="noopener"><span class="ic">📸</span><div class="lt"><b>Myndir úr leikjum</b><small>sporthero.is</small></div><span class="chev">›</span></a>
@@ -827,6 +845,30 @@ function lsSet(key, v){ try{ localStorage.setItem(key, JSON.stringify(v)); }catc
 
 function getMatches(){ return lsGet('iase-matches', []); }
 function setMatches(m){ lsSet('iase-matches', m); }
+
+// Opinber riðlaleikjadagskrá af mótakerfinu (torneopal) — föstudagsleikirnir.
+// Leikir laugardags/sunnudags raðast eftir riðlaúrslitum og eru þá annaðhvort
+// bætt við hér (ný útgáfa af skránni) eða handvirkt með "＋ Bæta við leik".
+const OFFICIAL_MATCHES = [
+  {id:'off-1093', day:'fos', t:'09:00', opp:'Álftanes Mist Smára',  field:'Völlur 5',      side:'home'},
+  {id:'off-1095', day:'fos', t:'10:30', opp:'Fylkir Birna',         field:'Völlur 7',      side:'away'},
+  {id:'off-1097', day:'fos', t:'12:00', opp:'Stjarnan Nanna Lilja', field:'Völlur 1 (TV)', side:'home'},
+];
+
+// Sáir opinberu leikjunum EINU SINNI á hvert tæki (eftir fyrstu samstillingu,
+// svo nýjasta staðan berist fyrst). Eyðing/breyting eftir á helst —
+// sáningin endurtekur sig ekki á sama tæki.
+async function seedOfficialMatches(){
+  if(localStorage.getItem('iase-seed-fos-v1')) return;
+  const cur = getMatches();
+  const missing = OFFICIAL_MATCHES.filter(o => !cur.some(m => m.id === o.id));
+  if(missing.length){
+    setMatches(cur.concat(missing));
+    renderAll();
+    if(ghToken()) await syncFields(['matches']);
+  }
+  localStorage.setItem('iase-seed-fos-v1','1');
+}
 function getScores(){ return lsGet('iase-scores2', {}); }
 function setScores(s){ lsSet('iase-scores2', s); }
 
@@ -1643,6 +1685,18 @@ document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState === 'visible') syncPull();
 });
 
+/* ====================== RIÐILLINN LIVE (mótakerfis-tól) ====================== */
+// Opinberu innfellingartólin frá torneopal, hlaðin í einangraða ramma (iframe)
+// í hvert sinn sem glugginn opnast — alltaf ferskustu gögn, ekkert skyndiminni.
+function openLiveWidgets(){
+  const base = "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><body style='margin:8px;font-family:sans-serif'>";
+  document.getElementById('live-schedule').srcdoc =
+    base + "<div style='width:100%'><script charset='utf-8' src='https://simamotid.torneopal.com/taso/widget.php?teamid=173867&widget=schedule'><\/script></div>";
+  document.getElementById('live-table').srcdoc =
+    base + "<div style='width:100%'><script charset='utf-8' src='https://simamotid.torneopal.com/taso/widget.php?competition=sim_0017&class=7f&group=15&widget=scoretable'><\/script></div>";
+  openOverlay('ov-live');
+}
+
 
 function refreshSyncUI(){
   const has = !!ghToken();
@@ -1692,7 +1746,7 @@ renderPack();
 renderRoster();
 loadWeather();
 refreshSyncUI();
-syncPull();
+syncPull().then(seedOfficialMatches);
 startRealtimeStream();
 
 setInterval(tick, 1000);            // niðurtalning á sekúndufresti
