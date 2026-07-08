@@ -661,14 +661,14 @@
 <div class="overlay" id="ov-sync">
   <div class="overlay-bar"><span class="ot">🔄 Samstilling</span><button class="overlay-close" onclick="closeOverlay('ov-sync')">✕</button></div>
   <div class="overlay-scroll">
-    <p class="about-p">Leikir, úrslit og pakklisti samstillast sjálfkrafa milli allra sem opna þessa síðu. Með tengdan lykil sækir appið nýjustu stöðu á ~8 sek fresti, nánast samstundis. Án lykils sést sama staða, en getur tekið nokkrar mínútur að birtast (GitHub geymir opinbera útgáfu tímabundið í skyndiminni).</p>
-    <p class="about-p">Til að <b>skrá</b> breytingar sjálf (bæta við leik, skrá úrslit, haka í pakklista) þarf þitt eigið GitHub-lykil með skrifheimild að <b>eydisaegis/simamot</b>.</p>
+    <p class="about-p">Leikir, úrslit og pakklisti samstillast sjálfkrafa og <b>samstundis</b> milli allra sem opna þessa síðu — appið heldur opinni tengingu og fær breytingar sendar strax, engin bið eftir endurtekinni fyrirspurn.</p>
+    <p class="about-p">Til að <b>skrá</b> breytingar sjálf (bæta við leik, skrá úrslit, haka í pakklista) þarf lykilorðið sem er sameiginlegt fyrir liðið.</p>
 
     <div id="sync-token-box">
-      <div class="frm-lbl">GitHub-lykill (Personal Access Token)</div>
-      <input class="frm-in" id="sync-token-in" type="password" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" spellcheck="false">
-      <button class="frm-save" id="sync-token-save">Vista lykil</button>
-      <div class="note-sm">Lykillinn geymist bara í þessum vafra á þessu tæki — fer aldrei neitt annað en beint til GitHub. Án lykils sérðu samt allt, en getur ekki skráð breytingar.</div>
+      <div class="frm-lbl">Lykilorð</div>
+      <input class="frm-in" id="sync-token-in" type="password" placeholder="Lykilorðið þitt" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button class="frm-save" id="sync-token-save">Vista lykilorð</button>
+      <div class="note-sm">Lykilorðið geymist bara í þessum vafra á þessu tæki. Án þess sérðu samt allt, en getur ekki skráð breytingar.</div>
     </div>
 
     <div id="sync-active-box" style="display:none">
@@ -1352,7 +1352,7 @@ function renderPack(){
   const el = document.getElementById('pack-scroll');
   let html = '';
   if(locked){
-    html += `<div class="priv-banner">🔒 <div><b>Læst.</b> Tengdu GitHub-lykil til að haka við hluti — <a href="#" onclick="openOverlay('ov-sync');return false">tengja núna</a>.</div></div>`;
+    html += `<div class="priv-banner">🔒 <div><b>Læst.</b> Settu inn lykilorð til að haka við hluti — <a href="#" onclick="openOverlay('ov-sync');return false">tengja núna</a>.</div></div>`;
   }
   Object.keys(packing).forEach(group=>{
     html += `<div class="pack-group"><h3>${group}</h3>`;
@@ -1470,37 +1470,25 @@ try{
     'data:application/manifest+json,'+encodeURIComponent(JSON.stringify(manifest));
 }catch(e){}
 
-/* ====================== SAMSTILLING (GitHub) ====================== */
-// Leikir, úrslit og pakklisti samstillast með því að lesa/skrifa data.json
-// í GitHub-geymslunni eydisaegis/simamot (public repo — sjálf HTML-síðan má
-// vera opinber, en liðslisti með nöfnum/símanúmerum er ALDREI sendur hingað).
-// Lestur (til að SJÁ leiki/úrslit) þarf engan lykil, af því geymslan er opinber.
-// Til að SKRIFA (bæta við leik, skrá úrslit, haka í pakklista) þarf hver
-// notandi sinn eigin Personal Access Token — geymist bara í localStorage á
-// því tæki og er aldrei sent annað en beint til GitHub.
+/* ====================== SAMSTILLING (Firebase) ====================== */
+// Leikir, úrslit og pakklisti samstillast með Firebase Realtime Database.
+// LESTUR (til að SJÁ leiki/úrslit) þarf ekkert lykilorð — gagnagrunnurinn er
+// opinn til lestrar. Breytingar streyma til allra viðstaddra nánast samstundis
+// (SSE-tenging), engin bið eftir endurtekinni fyrirspurn.
+// SKRIF (bæta við leik, skrá úrslit, haka í pakklista) krefjast lykilorðsins
+// sem stofnandinn setti upp í Firebase — geymist bara í localStorage á þessu
+// tæki og er aldrei sent annað en beint til Firebase.
 
-const GH = { owner:'eydisaegis', repo:'simamot', path:'data.json', branch:'main' };
+const FB = { databaseURL:'https://simamot-2e9dc-default-rtdb.europe-west1.firebasedatabase.app', node:'simamot' };
 let syncBusy = false;
-let syncTimer = null;
+let fbStream = null;
 
-function ghToken(){ return localStorage.getItem('iase-gh-token') || ''; }
+function ghToken(){ return localStorage.getItem('iase-fb-secret') || ''; }
 function requireToken(){
   if(ghToken()) return true;
-  alert('Til að skrá breytingar þarf tengdan GitHub-lykil.\n\nFarðu í Meira → Samstilling og tengdu lykilinn þinn fyrst.');
+  alert('Til að skrá breytingar þarf tengt lykilorð.\n\nFarðu í Meira → Samstilling og settu inn lykilorðið fyrst.');
   openOverlay('ov-sync');
   return false;
-}
-function ghHeaders(){
-  const h = { 'Accept':'application/vnd.github+json' };
-  if(ghToken()) h['Authorization'] = 'Bearer '+ghToken();
-  return h;
-}
-
-function utf8ToB64(str){
-  const bytes = new TextEncoder().encode(str);
-  let bin=''; const chunk=0x8000;
-  for(let i=0;i<bytes.length;i+=chunk){ bin += String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
-  return btoa(bin);
 }
 
 function setSyncStatus(txt, isErr){
@@ -1510,73 +1498,45 @@ function setSyncStatus(txt, isErr){
   if(err){ err.style.display = isErr ? '' : 'none'; if(isErr) err.textContent = txt; }
 }
 
-// Opinber lestur — engin auðkenning þarf, virkar fyrir alla með hlekkinn.
-// Fer um GitHub's CDN sem getur geymt svör í skyndiminni í nokkrar mínútur.
-async function ghReadPublic(){
-  const url = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/${GH.path}?t=${Date.now()}`;
+async function fbRead(){
+  const url = `${FB.databaseURL}/${FB.node}.json?t=${Date.now()}`;
   const r = await fetch(url, { cache:'no-store' });
-  if(r.status===404) return null;
   if(!r.ok) throw new Error('Lestur '+r.status);
-  try{ return await r.json(); }catch(e){ return null; }
+  return await r.json();
 }
 
-// Hraðlestur með lykli — fer beint um GitHub API (ekki CDN), nánast ekkert
-// skyndiminni. Notað sjálfkrafa þegar lykill er tengdur.
-async function ghReadFast(){
-  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}?ref=${GH.branch}&t=${Date.now()}`;
-  const r = await fetch(url, { headers:{...ghHeaders(),'Accept':'application/vnd.github.raw'}, cache:'no-store' });
-  if(r.status===404) return null;
-  if(!r.ok) throw new Error('Lestur '+r.status);
-  const txt = await r.text();
-  try{ return JSON.parse(txt); }catch(e){ return null; }
-}
-
-// Sha þarf bara fyrir skrif — API-kall, virkar með eða án lykils á opinberri geymslu.
-async function ghGetSha(){
-  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}?ref=${GH.branch}&t=${Date.now()}`;
-  const r = await fetch(url, { headers: ghHeaders(), cache:'no-store' });
-  if(r.status===404) return null;
-  if(!r.ok) throw new Error('Undirbúningur '+r.status);
-  const j = await r.json();
-  return j.sha;
-}
-
-async function ghPutFile(dataObj, sha){
-  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
-  const body = {
-    message: 'Samstilling — '+new Date().toISOString(),
-    content: utf8ToB64(JSON.stringify(dataObj, null, 2)),
-    branch: GH.branch,
-  };
-  if(sha) body.sha = sha;
-  const r = await fetch(url, { method:'PUT', headers:{...ghHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body) });
+async function fbWrite(dataObj){
+  const url = `${FB.databaseURL}/${FB.node}.json`;
+  const payload = { ...dataObj, _secret: ghToken() };
+  const r = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
   if(!r.ok){
-    if(r.status===401||r.status===403) throw new Error(r.status+' — vantar/rangan lykil með skrifheimild');
-    if(r.status===409) throw new Error('árekstur, reyni aftur');
+    if(r.status===401||r.status===403) throw new Error(r.status+' — rangt lykilorð');
     throw new Error('Skrifa '+r.status);
   }
 }
 
-// Sækir nýjustu deildu gögnin og yfirskrifar staðbundið EF þau eru nýrri.
-// Með lykli: hraðlestur um API (sekúndur). Án lykils: opinber CDN-leið (getur tekið nokkrar mín).
+function applyRemoteData(data){
+  if(!data) return;
+  const remoteTs = data.updatedAt || 0;
+  const localTs = lsGet('iase-remote-ts', 0);
+  if(remoteTs > localTs){
+    if(Array.isArray(data.matches)) setMatches(data.matches);
+    if(data.scores) setScores(data.scores);
+    if(data.packing) lsSet('iase-pakklisti', data.packing);
+    lsSet('iase-remote-ts', remoteTs);
+    renderAll(); renderPack();
+  }
+  setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
+}
+
+// Handvirk sæking — notuð af "Samstilla núna" og "draga niður" bendingunni.
 async function syncPull(){
   if(syncBusy) return;
   syncBusy = true;
-  if(ghToken()) setSyncStatus('Samstilli…');
+  setSyncStatus('Samstilli…');
   try{
-    const data = ghToken() ? await ghReadFast() : await ghReadPublic();
-    if(data){
-      const remoteTs = data.updatedAt || 0;
-      const localTs = lsGet('iase-remote-ts', 0);
-      if(remoteTs > localTs){
-        if(Array.isArray(data.matches)) setMatches(data.matches);
-        if(data.scores) setScores(data.scores);
-        if(data.packing) lsSet('iase-pakklisti', data.packing);
-        lsSet('iase-remote-ts', remoteTs);
-        renderAll(); renderPack();
-      }
-    }
-    setSyncStatus(ghToken() ? 'Samstillt kl. '+fmtHM(new Date()) : 'Les sjálfkrafa — engin lykill tengdur');
+    const data = await fbRead();
+    applyRemoteData(data);
   }catch(e){
     setSyncStatus('Villa við samstillingu: '+e.message, true);
   }finally{
@@ -1584,27 +1544,55 @@ async function syncPull(){
   }
 }
 
-// Sendir staðbundnar breytingar upp — krefst lykils með skrifheimild.
+// Sendir staðbundnar breytingar upp — krefst lykilorðs.
 async function syncPush(){
   if(!ghToken()) return;
   if(syncBusy){ setTimeout(syncPush, 800); return; }
   syncBusy = true;
   setSyncStatus('Sendi breytingar…');
   try{
-    const sha = await ghGetSha();
     const dataObj = {
       matches: getMatches(),
       scores: getScores(),
       packing: lsGet('iase-pakklisti', {}),
       updatedAt: Date.now(),
     };
-    await ghPutFile(dataObj, sha);
+    await fbWrite(dataObj);
     lsSet('iase-remote-ts', dataObj.updatedAt);
     setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
   }catch(e){
     setSyncStatus('Villa við sendingu: '+e.message, true);
   }finally{
     syncBusy = false;
+  }
+}
+
+// Rauntímastreymi — heldur opinni tengingu við Firebase og fær breytingar
+// ýttar til sín um leið og einhver vistar, engin bið eftir næstu fyrirspurn.
+function startRealtimeStream(){
+  if(typeof EventSource === 'undefined'){
+    // Vafri styður ekki SSE — falla til baka í endurtekna sækingu.
+    if(fbStream) clearInterval(fbStream);
+    fbStream = setInterval(syncPull, 15000);
+    return;
+  }
+  try{
+    const es = new EventSource(`${FB.databaseURL}/${FB.node}.json`);
+    const onMsg = (e)=>{
+      try{
+        const payload = JSON.parse(e.data);
+        if(payload && payload.path === '/' && payload.data && typeof payload.data === 'object'){
+          applyRemoteData(payload.data);
+        }
+      }catch(err){ /* hunsa illa mótuð skilaboð */ }
+    };
+    es.addEventListener('put', onMsg);
+    es.addEventListener('patch', onMsg);
+    es.onerror = ()=>{ setSyncStatus('Tengingu að koma á aftur…'); };
+    fbStream = es;
+  }catch(e){
+    // Fallback ef EventSource klikkar af einhverjum ástæðum.
+    fbStream = setInterval(syncPull, 15000);
   }
 }
 
@@ -1616,7 +1604,7 @@ function refreshSyncUI(){
   const addBtn = document.getElementById('add-match-btn');
   if(addBtn){
     addBtn.classList.toggle('locked', !has);
-    addBtn.textContent = has ? '＋ Bæta við leik' : '🔒 Tengja lykil til að skrá leiki';
+    addBtn.textContent = has ? '＋ Bæta við leik' : '🔒 Settu inn lykilorð til að skrá leiki';
   }
   renderDay();
   renderResults();
@@ -1626,28 +1614,18 @@ function refreshSyncUI(){
 document.getElementById('sync-token-save').onclick = async function(){
   const v = document.getElementById('sync-token-in').value.trim();
   if(!v) return;
-  localStorage.setItem('iase-gh-token', v);
+  localStorage.setItem('iase-fb-secret', v);
   document.getElementById('sync-token-in').value = '';
   refreshSyncUI();
   await syncPull();
   await syncPush();
-  startSyncTimer();
 };
 document.getElementById('sync-now-btn').onclick = async function(){ await syncPull(); if(ghToken()) await syncPush(); };
 document.getElementById('sync-forget-btn').onclick = function(){
   if(!confirm('Aftengja þetta tæki frá ritstjórn? Þú munt samt sjá leiki/úrslit sjálfkrafa áfram.')) return;
-  localStorage.removeItem('iase-gh-token');
+  localStorage.removeItem('iase-fb-secret');
   refreshSyncUI();
-  startSyncTimer();
 };
-
-function startSyncTimer(){
-  if(syncTimer) clearInterval(syncTimer);
-  // Með lykli: hraðvirk API-leið, nóg svigrúm (5.000 fyrirsp./klst) fyrir tíða sækingu.
-  // Án lykils: opinbera CDN-leiðin, hægari hvort eð er — óþarfi að spyrja oft.
-  const ms = ghToken() ? 8000 : 25000;
-  syncTimer = setInterval(syncPull, ms);
-}
 
 /* ====================== RÆSING & TAKTUR ====================== */
 
@@ -1667,7 +1645,7 @@ renderRoster();
 loadWeather();
 refreshSyncUI();
 syncPull();
-startSyncTimer();
+startRealtimeStream();
 
 setInterval(tick, 1000);            // niðurtalning á sekúndufresti
 setInterval(()=>{ updateNow(); updateUpNext(); }, 60000);  // núna-kort á mínútufresti
