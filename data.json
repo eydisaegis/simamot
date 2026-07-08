@@ -2,11 +2,11 @@
   "matches": [],
   "scores": {},
   "packing": {
-    "Svefnaðstaða::Náttföt": true,
+    "Svefnaðstaða::Náttföt": false,
     "Svefnaðstaða::Svefnpoki eða sæng": true,
-    "Svefnaðstaða::Koddi": true,
-    "Svefnaðstaða::Lak": true,
+    "Svefnaðstaða::Koddi": false,
+    "Svefnaðstaða::Lak": false,
     "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": true
   },
-  "updatedAt": 1783474610704
+  "updatedAt": 1783474820925
 }
