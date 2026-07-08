@@ -1,5 +1,14 @@
 {
-  "matches": [],
+  "matches": [
+    {
+      "id": "m1783475682133",
+      "day": "fos",
+      "t": "08:00",
+      "opp": "M",
+      "field": "M",
+      "side": "home"
+    }
+  ],
   "scores": {},
   "packing": {
     "Svefnaðstaða::Náttföt": false,
@@ -9,5 +18,5 @@
     "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": true,
     "Annað::Sundföt í sundpoka": false
   },
-  "updatedAt": 1783475585972
+  "updatedAt": 1783475682833
 }
