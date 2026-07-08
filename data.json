@@ -10,6 +10,8 @@
     }
   ],
   "scores": {},
-  "packing": {},
-  "updatedAt": 1783472004686
+  "packing": {
+    "Svefnaðstaða::Náttföt": true
+  },
+  "updatedAt": 1783472014515
 }
