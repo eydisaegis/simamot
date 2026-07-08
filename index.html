@@ -193,6 +193,8 @@
     font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
   }
   .add-btn:active{background:var(--svart-3)}
+  .add-btn.locked{color:var(--grar-ljos);border-color:var(--lina)}
+  .pack-reset:disabled, .frm-save:disabled{opacity:.5}
 
   /* ---- Leikjaspjald ---- */
   .match-card{
@@ -493,7 +495,7 @@
   <!-- ============ DAGSKRÁ ============ -->
   <section id="tab-dagskra" class="tab-content">
     <div class="daypills" id="daypills"></div>
-    <button class="add-btn" onclick="openAddMatch()">＋ Bæta við leik</button>
+    <button class="add-btn" id="add-match-btn" onclick="openAddMatch()">＋ Bæta við leik</button>
     <div id="day-content"></div>
   </section>
 
@@ -1079,8 +1081,9 @@ function matchCardHTML(m, now, opts){
   const live = isLive(m, now);
   const done = isPast(m, now);
   const showDay = opts && opts.showDay;
+  const locked = !ghToken();
   return `<div class="match-card ia ${done&&!live?'done':''} ${live?'live-now':''}" data-mid="${m.id}">
-    <button class="mc-edit" data-edit="${m.id}" aria-label="Breyta leik">✎</button>
+    <button class="mc-edit" data-edit="${m.id}" aria-label="Breyta leik">${locked?'🔒':'✎'}</button>
     <div class="mc-time">${m.t}<small>${esc(m.field||'')}</small></div>
     <div class="mc-div"></div>
     <div class="mc-body">
@@ -1094,7 +1097,7 @@ function matchCardHTML(m, now, opts){
       </div>
     </div>
     <div class="mc-right">
-      ${s?`<div class="mc-score">${s.h}–${s.a}</div>`:`<button class="score-btn" data-score="${m.id}">Skrá úrslit</button>`}
+      ${s?`<div class="mc-score">${s.h}–${s.a}</div>`:`<button class="score-btn" data-score="${m.id}">${locked?'🔒 Læst':'Skrá úrslit'}</button>`}
     </div>
   </div>`;
 }
@@ -1188,6 +1191,7 @@ function renderSummary(){
 let editingId = null;
 
 function openAddMatch(prefill){
+  if(!requireToken()) return;
   editingId = prefill ? prefill.id : null;
   document.getElementById('am-title').textContent = editingId ? '✎ Breyta leik' : '＋ Bæta við leik';
   document.getElementById('am-day').value = prefill ? prefill.day : (todayKey()||'fos');
@@ -1211,6 +1215,7 @@ document.getElementById('am-side').addEventListener('click', e=>{
   setSeg(b.dataset.v);
 });
 document.getElementById('am-save').onclick = function(){
+  if(!requireToken()) return;
   const opp = document.getElementById('am-opp').value.trim();
   const t = document.getElementById('am-time').value;
   if(!opp || !t){ document.getElementById('am-err').style.display=''; return; }
@@ -1229,6 +1234,7 @@ document.getElementById('am-save').onclick = function(){
   syncPush();
 };
 document.getElementById('am-del').onclick = function(){
+  if(!requireToken()) return;
   if(!editingId) return;
   if(!confirm('Eyða þessum leik? Skráð úrslit hans eyðast líka.')) return;
   setMatches(getMatches().filter(x=>x.id!==editingId));
@@ -1243,6 +1249,7 @@ document.getElementById('am-del').onclick = function(){
 let scoringId = null;
 
 function openScore(id){
+  if(!requireToken()) return;
   const m = getMatches().find(x=>x.id===id); if(!m) return;
   scoringId = id;
   const tm = matchTeams(m);
@@ -1263,6 +1270,7 @@ function bump(id, delta){
   inp.value = v;
 }
 document.getElementById('sc-save').onclick = function(){
+  if(!requireToken()) return;
   if(!scoringId) return;
   let h = parseInt(document.getElementById('sc-h').value,10);
   let a = parseInt(document.getElementById('sc-a').value,10);
@@ -1274,6 +1282,7 @@ document.getElementById('sc-save').onclick = function(){
   syncPush();
 };
 document.getElementById('sc-clear').onclick = function(){
+  if(!requireToken()) return;
   if(!scoringId) return;
   const s = getScores(); delete s[scoringId]; setScores(s);
   closeOverlay('ov-score');
@@ -1316,23 +1325,28 @@ function shareUpdate(){
 
 function renderPack(){
   const state = lsGet('iase-pakklisti', {});
+  const locked = !ghToken();
   const el = document.getElementById('pack-scroll');
   let html = '';
+  if(locked){
+    html += `<div class="priv-banner">🔒 <div><b>Læst.</b> Tengdu GitHub-lykil til að haka við hluti — <a href="#" onclick="openOverlay('ov-sync');return false">tengja núna</a>.</div></div>`;
+  }
   Object.keys(packing).forEach(group=>{
     html += `<div class="pack-group"><h3>${group}</h3>`;
     packing[group].forEach(item=>{
       const key = group+'::'+item;
       const checked = !!state[key];
       html += `<label class="pack-item ${checked?'checked':''}">
-        <input type="checkbox" data-key="${esc(key)}" ${checked?'checked':''}>
+        <input type="checkbox" data-key="${esc(key)}" ${checked?'checked':''} ${locked?'disabled':''}>
         <span>${item}</span></label>`;
     });
     html += `</div>`;
   });
-  html += `<button class="pack-reset" id="pack-reset-btn">Núllstilla merkingar</button>`;
+  html += `<button class="pack-reset" id="pack-reset-btn" ${locked?'disabled':''}>${locked?'🔒 ':''}Núllstilla merkingar</button>`;
   el.innerHTML = html;
   el.querySelectorAll('input[type=checkbox]').forEach(cb=>{
     cb.addEventListener('change', ()=>{
+      if(!requireToken()){ cb.checked = !cb.checked; return; }
       const s = lsGet('iase-pakklisti', {});
       s[cb.dataset.key] = cb.checked;
       lsSet('iase-pakklisti', s);
@@ -1340,7 +1354,10 @@ function renderPack(){
       syncPush();
     });
   });
-  document.getElementById('pack-reset-btn').onclick = ()=>{ lsSet('iase-pakklisti', {}); renderPack(); syncPush(); };
+  document.getElementById('pack-reset-btn').onclick = ()=>{
+    if(!requireToken()) return;
+    lsSet('iase-pakklisti', {}); renderPack(); syncPush();
+  };
 }
 
 /* ====================== LIÐSLISTI ====================== */
@@ -1443,6 +1460,12 @@ let syncBusy = false;
 let syncTimer = null;
 
 function ghToken(){ return localStorage.getItem('iase-gh-token') || ''; }
+function requireToken(){
+  if(ghToken()) return true;
+  alert('Til að skrá breytingar þarf tengdan GitHub-lykil.\n\nFarðu í Meira → Samstilling og tengdu lykilinn þinn fyrst.');
+  openOverlay('ov-sync');
+  return false;
+}
 function ghHeaders(){
   const h = { 'Accept':'application/vnd.github+json' };
   if(ghToken()) h['Authorization'] = 'Bearer '+ghToken();
@@ -1554,6 +1577,14 @@ function refreshSyncUI(){
   document.getElementById('sync-token-box').style.display = has ? 'none' : '';
   document.getElementById('sync-active-box').style.display = has ? '' : 'none';
   document.getElementById('sync-tile-ic').textContent = has ? '✏️' : '👀';
+  const addBtn = document.getElementById('add-match-btn');
+  if(addBtn){
+    addBtn.classList.toggle('locked', !has);
+    addBtn.textContent = has ? '＋ Bæta við leik' : '🔒 Tengja lykil til að skrá leiki';
+  }
+  renderDay();
+  renderResults();
+  renderPack();
 }
 
 document.getElementById('sync-token-save').onclick = async function(){
