@@ -1,11 +1,11 @@
 {
   "matches": [
     {
-      "id": "m1783475682133",
-      "day": "fos",
+      "id": "m1783475898501",
+      "day": "sun",
       "t": "08:00",
-      "opp": "M",
-      "field": "M",
+      "opp": "Kkkkk",
+      "field": "Kl",
       "side": "home"
     }
   ],
@@ -18,5 +18,5 @@
     "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": true,
     "Annað::Sundföt í sundpoka": false
   },
-  "updatedAt": 1783476125062
+  "updatedAt": 1783476134141
 }
