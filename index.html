@@ -38,12 +38,15 @@
     color:var(--hvitt);
     line-height:1.45;
     overscroll-behavior-y:contain;
+    display:flex;flex-direction:column;
+    height:100vh;height:100dvh;
+    overflow:hidden;
   }
   .wrap{max-width:560px;margin:0 auto;padding:0 16px}
 
   /* ---- Efsti haus ---- */
   header.top{
-    position:sticky;top:0;z-index:20;
+    flex:0 0 auto;
     background-color:var(--svart);
     border-bottom:1px solid var(--lina);
     padding:calc(12px + env(safe-area-inset-top)) 16px 11px;
@@ -70,7 +73,10 @@
   .mot-badge span{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:13px;line-height:1}
   .mot-badge small{font-size:7.5px;font-weight:700;opacity:.85}
 
-  main{padding-bottom:96px}
+  main{
+    flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom));
+  }
   .tab-content{display:none}
   .tab-content.active{display:block}
 
@@ -383,13 +389,11 @@
 
   /* ---- Neðsta tab-bar ---- */
   nav.tabbar{
-    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    flex:0 0 auto;z-index:30;
     background:rgba(17,17,16,.94);
     -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
     border-top:1px solid var(--lina);
     display:flex;padding:8px 6px calc(8px + env(safe-area-inset-bottom));
-    -webkit-transform:translateZ(0);transform:translateZ(0);
-    will-change:transform;
   }
   nav.tabbar button{
     flex:1;background:none;border:none;color:var(--grar);
@@ -657,7 +661,7 @@
 <div class="overlay" id="ov-sync">
   <div class="overlay-bar"><span class="ot">🔄 Samstilling</span><button class="overlay-close" onclick="closeOverlay('ov-sync')">✕</button></div>
   <div class="overlay-scroll">
-    <p class="about-p">Leikir, úrslit og pakklisti samstillast sjálfkrafa milli allra sem opna þessa síðu — engan lykil þarf til að <b>sjá</b> nýjustu stöðu, appið sækir hana á ~20 sek fresti.</p>
+    <p class="about-p">Leikir, úrslit og pakklisti samstillast sjálfkrafa milli allra sem opna þessa síðu. Með tengdan lykil sækir appið nýjustu stöðu á ~8 sek fresti, nánast samstundis. Án lykils sést sama staða, en getur tekið nokkrar mínútur að birtast (GitHub geymir opinbera útgáfu tímabundið í skyndiminni).</p>
     <p class="about-p">Til að <b>skrá</b> breytingar sjálf (bæta við leik, skrá úrslit, haka í pakklista) þarf þitt eigið GitHub-lykil með skrifheimild að <b>eydisaegis/simamot</b>.</p>
 
     <div id="sync-token-box">
@@ -1439,7 +1443,8 @@ function goTab(name){
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
-  window.scrollTo(0,0);
+  const main = document.querySelector('main');
+  if(main) main.scrollTop = 0;
 }
 document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click', ()=>goTab(b.dataset.tab)));
 
@@ -1506,12 +1511,24 @@ function setSyncStatus(txt, isErr){
 }
 
 // Opinber lestur — engin auðkenning þarf, virkar fyrir alla með hlekkinn.
+// Fer um GitHub's CDN sem getur geymt svör í skyndiminni í nokkrar mínútur.
 async function ghReadPublic(){
   const url = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/${GH.path}?t=${Date.now()}`;
   const r = await fetch(url, { cache:'no-store' });
   if(r.status===404) return null;
   if(!r.ok) throw new Error('Lestur '+r.status);
   try{ return await r.json(); }catch(e){ return null; }
+}
+
+// Hraðlestur með lykli — fer beint um GitHub API (ekki CDN), nánast ekkert
+// skyndiminni. Notað sjálfkrafa þegar lykill er tengdur.
+async function ghReadFast(){
+  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}?ref=${GH.branch}&t=${Date.now()}`;
+  const r = await fetch(url, { headers:{...ghHeaders(),'Accept':'application/vnd.github.raw'}, cache:'no-store' });
+  if(r.status===404) return null;
+  if(!r.ok) throw new Error('Lestur '+r.status);
+  const txt = await r.text();
+  try{ return JSON.parse(txt); }catch(e){ return null; }
 }
 
 // Sha þarf bara fyrir skrif — API-kall, virkar með eða án lykils á opinberri geymslu.
@@ -1541,13 +1558,13 @@ async function ghPutFile(dataObj, sha){
 }
 
 // Sækir nýjustu deildu gögnin og yfirskrifar staðbundið EF þau eru nýrri.
-// Virkar ALLTAF, óháð því hvort lykill er tengdur — geymslan er opinber.
+// Með lykli: hraðlestur um API (sekúndur). Án lykils: opinber CDN-leið (getur tekið nokkrar mín).
 async function syncPull(){
   if(syncBusy) return;
   syncBusy = true;
   if(ghToken()) setSyncStatus('Samstilli…');
   try{
-    const data = await ghReadPublic();
+    const data = ghToken() ? await ghReadFast() : await ghReadPublic();
     if(data){
       const remoteTs = data.updatedAt || 0;
       const localTs = lsGet('iase-remote-ts', 0);
@@ -1614,17 +1631,22 @@ document.getElementById('sync-token-save').onclick = async function(){
   refreshSyncUI();
   await syncPull();
   await syncPush();
+  startSyncTimer();
 };
 document.getElementById('sync-now-btn').onclick = async function(){ await syncPull(); if(ghToken()) await syncPush(); };
 document.getElementById('sync-forget-btn').onclick = function(){
   if(!confirm('Aftengja þetta tæki frá ritstjórn? Þú munt samt sjá leiki/úrslit sjálfkrafa áfram.')) return;
   localStorage.removeItem('iase-gh-token');
   refreshSyncUI();
+  startSyncTimer();
 };
 
 function startSyncTimer(){
   if(syncTimer) clearInterval(syncTimer);
-  syncTimer = setInterval(syncPull, 20000); // sækja nýtt á 20 sek fresti — virkar fyrir alla
+  // Með lykli: hraðvirk API-leið, nóg svigrúm (5.000 fyrirsp./klst) fyrir tíða sækingu.
+  // Án lykils: opinbera CDN-leiðin, hægari hvort eð er — óþarfi að spyrja oft.
+  const ms = ghToken() ? 8000 : 25000;
+  syncTimer = setInterval(syncPull, ms);
 }
 
 /* ====================== RÆSING & TAKTUR ====================== */
@@ -1663,21 +1685,21 @@ async function pullRefreshNow(){
 (function(){
   const ind = document.getElementById('pull-ind');
   const ico = document.getElementById('pull-ico');
-  const se = document.scrollingElement || document.documentElement;
+  const se = document.querySelector('main');
   const TH = 70;
   let startY = 0, pulling = false, dist = 0;
 
   function anyOverlayOpen(){ return !!document.querySelector('.overlay.open'); }
 
   window.addEventListener('touchstart', e=>{
-    if(se.scrollTop <= 0 && !anyOverlayOpen()){ startY = e.touches[0].clientY; pulling = true; dist = 0; }
+    if(se && se.scrollTop <= 0 && !anyOverlayOpen()){ startY = e.touches[0].clientY; pulling = true; dist = 0; }
     else pulling = false;
   }, {passive:true});
 
   window.addEventListener('touchmove', e=>{
     if(!pulling) return;
     dist = e.touches[0].clientY - startY;
-    if(dist > 0 && se.scrollTop <= 0){
+    if(dist > 0 && se && se.scrollTop <= 0){
       e.preventDefault();
       const d = Math.min(dist, 110);
       ind.style.opacity = Math.min(d / TH, 1);
