@@ -3,11 +3,11 @@
   "scores": {},
   "packing": {
     "Svefnaðstaða::Náttföt": false,
-    "Svefnaðstaða::Svefnpoki eða sæng": false,
+    "Svefnaðstaða::Svefnpoki eða sæng": true,
     "Svefnaðstaða::Koddi": false,
     "Svefnaðstaða::Lak": false,
     "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": true,
     "Annað::Sundföt í sundpoka": false
   },
-  "updatedAt": 1783476835614
+  "updatedAt": 1783477155214
 }
