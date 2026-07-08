@@ -12,7 +12,9 @@
   "scores": {},
   "packing": {
     "Svefnaðstaða::Náttföt": true,
-    "Svefnaðstaða::Svefnpoki eða sæng": true
+    "Svefnaðstaða::Svefnpoki eða sæng": true,
+    "Svefnaðstaða::Koddi": true,
+    "Svefnaðstaða::Lak": true
   },
-  "updatedAt": 1783474146502
+  "updatedAt": 1783474190676
 }
