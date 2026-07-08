@@ -6,7 +6,8 @@
     "Svefnaðstaða::Svefnpoki eða sæng": false,
     "Svefnaðstaða::Koddi": false,
     "Svefnaðstaða::Lak": false,
-    "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": false
+    "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": false,
+    "Annað::Sundföt í sundpoka": true
   },
-  "updatedAt": 1783475135485
+  "updatedAt": 1783475164876
 }
