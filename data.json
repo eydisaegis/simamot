@@ -1,17 +1,8 @@
 {
-  "matches": [
-    {
-      "id": "m1783472178440",
-      "day": "fos",
-      "t": "08:00",
-      "opp": "Jj",
-      "field": "Nn",
-      "side": "home"
-    }
-  ],
+  "matches": [],
   "scores": {},
   "packing": {
     "Svefnaðstaða::Náttföt": true
   },
-  "updatedAt": 1783472193920
+  "updatedAt": 1783473881131
 }
