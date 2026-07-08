@@ -1,14 +1,5 @@
 {
-  "matches": [
-    {
-      "id": "m1783473959023",
-      "day": "fim",
-      "t": "08:00",
-      "opp": "Mdndmd",
-      "field": "Nnnn",
-      "side": "home"
-    }
-  ],
+  "matches": [],
   "scores": {},
   "packing": {
     "Svefnaðstaða::Náttföt": true,
@@ -17,5 +8,5 @@
     "Svefnaðstaða::Lak": true,
     "Svefnaðstaða::Einbreið dýna eða vindsæng (+ teppi undir)": true
   },
-  "updatedAt": 1783474591203
+  "updatedAt": 1783474610704
 }
