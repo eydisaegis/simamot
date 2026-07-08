@@ -400,9 +400,25 @@
   nav.tabbar button.on{color:var(--gult)}
 
   @media (prefers-reduced-motion:reduce){ .pulse{animation:none} }
+
+  /* ---- Draga niður til að uppfæra ---- */
+  .pull-ind{
+    position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;z-index:60;
+    width:40px;height:40px;border-radius:50%;
+    background:var(--svart-3);border:1px solid var(--lina);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--gult);font-size:20px;font-weight:700;
+    opacity:0;transform:translateX(-50%) translateY(-10px);
+    pointer-events:none;
+  }
+  .pull-ind.ready{background:var(--gult);color:var(--svart);border-color:var(--gult)}
+  .pull-ind.spinning #pull-ico{animation:pullspin .7s linear infinite}
+  @keyframes pullspin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
+
+<div id="pull-ind" class="pull-ind"><span id="pull-ico">↻</span></div>
 
 <header class="top">
   <div class="top-row">
@@ -1635,6 +1651,61 @@ setInterval(tick, 1000);            // niðurtalning á sekúndufresti
 setInterval(()=>{ updateNow(); updateUpNext(); }, 60000);  // núna-kort á mínútufresti
 setInterval(renderAll, 5*60000);    // full uppfærsla á 5 mín fresti
 setInterval(loadWeather, 30*60000); // veður á 30 mín fresti
+
+/* ====================== DRAGA NIÐUR TIL AÐ UPPFÆRA ====================== */
+
+async function pullRefreshNow(){
+  await syncPull();
+  loadWeather();
+  renderAll();
+}
+
+(function(){
+  const ind = document.getElementById('pull-ind');
+  const ico = document.getElementById('pull-ico');
+  const se = document.scrollingElement || document.documentElement;
+  const TH = 70;
+  let startY = 0, pulling = false, dist = 0;
+
+  function anyOverlayOpen(){ return !!document.querySelector('.overlay.open'); }
+
+  window.addEventListener('touchstart', e=>{
+    if(se.scrollTop <= 0 && !anyOverlayOpen()){ startY = e.touches[0].clientY; pulling = true; dist = 0; }
+    else pulling = false;
+  }, {passive:true});
+
+  window.addEventListener('touchmove', e=>{
+    if(!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    if(dist > 0 && se.scrollTop <= 0){
+      e.preventDefault();
+      const d = Math.min(dist, 110);
+      ind.style.opacity = Math.min(d / TH, 1);
+      ind.style.transform = `translateX(-50%) translateY(${Math.min(d*0.6, 50)}px)`;
+      ico.style.transform = `rotate(${d*3}deg)`;
+      ind.classList.toggle('ready', dist > TH);
+    }
+  }, {passive:false});
+
+  window.addEventListener('touchend', async ()=>{
+    if(!pulling) return;
+    pulling = false;
+    if(dist > TH){
+      ind.classList.add('spinning');
+      ind.style.opacity = '1';
+      ind.style.transform = 'translateX(-50%) translateY(14px)';
+      try{ await pullRefreshNow(); }finally{
+        ind.classList.remove('spinning','ready');
+        ind.style.opacity = '0';
+        ind.style.transform = 'translateX(-50%) translateY(-10px)';
+      }
+    } else {
+      ind.style.opacity = '0';
+      ind.style.transform = 'translateX(-50%) translateY(-10px)';
+      ind.classList.remove('ready');
+    }
+  });
+})();
 </script>
 </body>
 </html>
