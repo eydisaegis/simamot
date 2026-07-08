@@ -765,23 +765,23 @@ const DAY_ORDER = ['fim','fos','lau','sun'];
 // Fastir viðburðir úr handbók (matur, skrúðganga o.fl.)
 const baseEvents = [
   {day:'fim', t:'14:00', type:'event', lbl:'Snælandsskóli opnar (gisting)', emoji:'🏫', field:'Snælandsskóli'},
-  {day:'fim', t:'16:00', type:'event', lbl:'Afhending mótsgjafa (til kl. 21)', emoji:'🎁', field:'Smárinn'},
+  {day:'fim', t:'16:00', end:'21:00', type:'event', lbl:'Afhending mótsgjafa (til kl. 21)', emoji:'🎁', field:'Smárinn'},
   {day:'fim', t:'17:45', type:'event', lbl:'Mæting í skrúðgöngu', emoji:'⏱️', field:'Smárahvammsvöllur'},
   {day:'fim', t:'18:00', type:'event', lbl:'Skrúðganga leggur af stað', emoji:'🎏', field:'Að Eikarvelli'},
   {day:'fim', t:'18:20', type:'event', lbl:'Mótssetning', emoji:'⭐', field:'Eikarvöllur'},
-  {day:'fim', t:'18:40', type:'event', lbl:'Kvöldmatur (til 20:15)', emoji:'🍽️', field:'Smárinn'},
+  {day:'fim', t:'18:40', end:'20:15', type:'event', lbl:'Kvöldmatur (til 20:15)', emoji:'🍽️', field:'Smárinn'},
   {day:'fim', t:'22:00', type:'event', lbl:'Ró í skólanum', emoji:'😴', field:'Snælandsskóli'},
 
-  {day:'fos', t:'07:00', type:'event', lbl:'Morgunmatur (til 10:00)', emoji:'🥣', field:'Smárinn'},
-  {day:'fos', t:'17:30', type:'event', lbl:'Kvöldmatur (til 19:15)', emoji:'🍽️', field:'Smárinn'},
+  {day:'fos', t:'07:00', end:'10:00', type:'event', lbl:'Morgunmatur (til 10:00)', emoji:'🥣', field:'Smárinn'},
+  {day:'fos', t:'17:30', end:'19:15', type:'event', lbl:'Kvöldmatur (til 19:15)', emoji:'🍽️', field:'Smárinn'},
   {day:'fos', t:'22:00', type:'event', lbl:'Ró í skólanum', emoji:'😴', field:'Snælandsskóli'},
 
-  {day:'lau', t:'07:00', type:'event', lbl:'Morgunmatur (til 10:00)', emoji:'🥣', field:'Smárinn'},
+  {day:'lau', t:'07:00', end:'10:00', type:'event', lbl:'Morgunmatur (til 10:00)', emoji:'🥣', field:'Smárinn'},
   {day:'lau', t:'14:00', type:'event', lbl:'Skilafrestur í spurningaleik (QR)', emoji:'❓', field:''},
-  {day:'lau', t:'17:00', type:'event', lbl:'Pylsuveisla & skemmtun (dagskrá 17:30)', emoji:'🌭', field:'Við Smárann/Fífuna'},
+  {day:'lau', t:'17:00', end:'18:30', type:'event', lbl:'Pylsuveisla & skemmtun (dagskrá 17:30)', emoji:'🌭', field:'Við Smárann/Fífuna'},
   {day:'lau', t:'22:00', type:'event', lbl:'Ró í skólanum', emoji:'😴', field:'Snælandsskóli'},
 
-  {day:'sun', t:'07:00', type:'event', lbl:'Morgunmatur (til 10:00)', emoji:'🥣', field:'Smárinn'},
+  {day:'sun', t:'07:00', end:'10:00', type:'event', lbl:'Morgunmatur (til 10:00)', emoji:'🥣', field:'Smárinn'},
   {day:'sun', t:'11:00', type:'event', lbl:'Stofan á að vera laus (sópa + rusl)', emoji:'🧹', field:'Snælandsskóli'},
   {day:'sun', t:'15:00', type:'event', lbl:'7. flokkur lýkur leikjum (u.þ.b.)', emoji:'🏁', field:''},
   {day:'sun', t:'15:15', type:'event', lbl:'Úrslitaleikur 5. fl. og mótslok', emoji:'🏆', field:'Eikarvöllur'},
@@ -858,7 +858,13 @@ function matchTeams(m){
 function isPast(it, now){
   const start = toDate(it);
   if(it.type==='match') return now > new Date(start.getTime()+MATCH_LEN_MIN*60000);
-  return now > start;
+  if(it.end){
+    const [eh,em] = it.end.split(':').map(Number);
+    const endDt = new Date(start); endDt.setHours(eh, em, 0, 0);
+    return now > endDt;
+  }
+  // Punktviðburðir (skrúðganga, mótssetning o.fl.) gránast 15 mín eftir upphaf.
+  return now > new Date(start.getTime()+15*60000);
 }
 function isLive(it, now){
   if(it.type!=='match') return false;
@@ -1525,22 +1531,39 @@ function fieldValue(name){
   return lsGet('iase-pakklisti', {});
 }
 
+// Gögnin eru geymd sem JSON-STRENGIR í Firebase (matchesJson o.s.frv.).
+// Ástæða: Firebase eyðir tómum listum ([] hverfur), breytir stundum listum í
+// hluti, og bannar lykla með '.' eða '/' (t.d. "Sápa / sjampó" í pakklistanum).
+// JSON-strengur kemst fram hjá öllu þessu — Firebase geymir hann óbreyttan.
+function parseField(name, data){
+  const js = data[name+'Json'];
+  if(js !== undefined && js !== null){
+    try{ return JSON.parse(js); }catch(e){ return undefined; }
+  }
+  // Eldri gögn (fyrir þessa breytingu) — lesa hrátt og laga listaform ef þarf.
+  const legacy = data[name];
+  if(legacy === undefined || legacy === null) return undefined;
+  if(name==='matches' && !Array.isArray(legacy)) return Object.values(legacy);
+  return legacy;
+}
+
 // Ber saman hvert svið (leikir/úrslit/pakklisti) SÉR — hvert með sinn eigin
 // tímastimpil — svo ólíkar breytingar geti aldrei yfirskrifað hvor aðra.
 function applyRemoteData(data){
   if(!data) return;
   let changed = false;
   SYNC_FIELDS.forEach(name=>{
-    if(data[name]===undefined) return;
     const remoteTs = data[name+'UpdatedAt'] || 0;
     const localTs = lsGet('iase-remote-ts-'+name, 0);
-    if(remoteTs > localTs){
-      if(name==='matches' && Array.isArray(data.matches)) setMatches(data.matches);
-      else if(name==='scores' && data.scores) setScores(data.scores);
-      else if(name==='packing' && data.packing) lsSet('iase-pakklisti', data.packing);
-      lsSet('iase-remote-ts-'+name, remoteTs);
-      changed = true;
-    }
+    if(remoteTs <= localTs) return;
+    const val = parseField(name, data);
+    if(val === undefined) return;
+    if(name==='matches' && Array.isArray(val)) setMatches(val);
+    else if(name==='scores' && typeof val==='object') setScores(val);
+    else if(name==='packing' && typeof val==='object') lsSet('iase-pakklisti', val);
+    else return;
+    lsSet('iase-remote-ts-'+name, remoteTs);
+    changed = true;
   });
   if(changed){ renderAll(); renderPack(); }
   setSyncStatus('Samstillt kl. '+fmtHM(new Date()));
@@ -1571,8 +1594,9 @@ async function syncFields(names){
     const ts = Date.now();
     const patch = {};
     names.forEach(name=>{
-      patch[name] = fieldValue(name);
+      patch[name+'Json'] = JSON.stringify(fieldValue(name));
       patch[name+'UpdatedAt'] = ts;
+      patch[name] = null; // hreinsa eldri hráa útgáfu ef hún er til
     });
     await fbPatch(patch);
     names.forEach(name=> lsSet('iase-remote-ts-'+name, ts));
@@ -1587,8 +1611,10 @@ async function syncFields(names){
 // Sendir allt í einu — bara notað þegar lykilorð er tengt í fyrsta sinn.
 async function syncPush(){ await syncFields(SYNC_FIELDS); }
 
-// Rauntímastreymi — heldur opinni tengingu við Firebase og fær breytingar
-// ýttar til sín um leið og einhver vistar, engin bið eftir næstu fyrirspurn.
+// Rauntímastreymi — heldur opinni tengingu við Firebase. Um leið og EITTHVAÐ
+// breytist í gagnagrunninum sækjum við heildarstöðuna (öruggara en að reyna
+// að púsla saman úr streymisatburðunum sjálfum, sem geta borist á ýmsu formi).
+let streamKick = null;
 function startRealtimeStream(){
   if(typeof EventSource === 'undefined'){
     // Vafri styður ekki SSE — falla til baka í endurtekna sækingu.
@@ -1598,13 +1624,9 @@ function startRealtimeStream(){
   }
   try{
     const es = new EventSource(`${FB.databaseURL}/${FB.node}.json`);
-    const onMsg = (e)=>{
-      try{
-        const payload = JSON.parse(e.data);
-        if(payload && payload.path === '/' && payload.data && typeof payload.data === 'object'){
-          applyRemoteData(payload.data);
-        }
-      }catch(err){ /* hunsa illa mótuð skilaboð */ }
+    const onMsg = ()=>{
+      clearTimeout(streamKick);
+      streamKick = setTimeout(syncPull, 250);
     };
     es.addEventListener('put', onMsg);
     es.addEventListener('patch', onMsg);
@@ -1615,6 +1637,12 @@ function startRealtimeStream(){
     fbStream = setInterval(syncPull, 15000);
   }
 }
+
+// Þegar appið kemur aftur í forgrunn (iOS frysti það á meðan) — sækja strax.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') syncPull();
+});
+
 
 function refreshSyncUI(){
   const has = !!ghToken();
